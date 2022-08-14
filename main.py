@@ -1,8 +1,8 @@
 # Quick Reference:
 # update.callback_query.data to obtain the pattern of the callback query (button press)
 # update.message.text to obtain the text from an update
-# context.bot.edit_message_reply_markup(chat_id=update.effective_chat.id,
-#                                       message_id=update.effective_message.message_id): remove markup (Keyboard)
+# remove markup(Keyboard):
+# context.bot.edit_message_reply_markup(chat_id=update.effective_chat.id, message_id=update.effective_message.message_id)
 
 
 # import all necessary modules
@@ -14,8 +14,8 @@ from telegram.ext import CommandHandler, CallbackQueryHandler, ConversationHandl
 import firebase_admin
 from firebase_admin import db
 from private_info import core_chat, user_chats, credentials_path, database_url, telegram_token
-import json
 from datetime import datetime, date
+from database_functions import archive_and_split, dict_to_excel, who_is_not_around_today, create_parade_state
 
 # so ConversationHandler doesn't throw errors
 MC_END_DATE, MC_URTI, MC_SUCCESS = range(3)
@@ -23,6 +23,7 @@ OFF_END_DATE, OFF_TYPE, OFF_SUCCESS = range(3)
 RSLOCATION, RSTYPE = range(2)
 REGISTERNAME, REGISTERFINISH = range(2)
 LTREACHCLINIC, LTLEFTCLINIC, LTREACHHOUSE = range(3)
+AWARD_OFF_NUMBER, AWARD_OFF_UPDATE = range(2)
 
 
 # TODO: handle rank promotion
@@ -52,23 +53,93 @@ def start(update, context):
         return REGISTERNAME
 
 
-# def admin(update, context):
-#     chat_id = update.effective_chat.id
-#     if chat_id == db.reference("/core_chat").get():
-#         admin_keyboard = InlineKeyboardMarkup([
-#             [InlineKeyboardButton("Export Excel", callback_data='Export Excel')],
-#             [InlineKeyboardButton("Generate Parade State", callback_data='Generate Parade State')],
-#             [InlineKeyboardButton("Award Off", callback_data='Award Off')]
-#         ])
-#         context.bot.send_message(chat_id=chat_id,
-#                                  text="What would you like to do today?", reply_markup=admin_keyboard)
-#     else:
-#         context.bot.send_message(chat_id=chat_id, text="Only admins can use this command.")
-#         return -1
+def admin(update, context):
+    chat_id = update.effective_chat.id
+    if chat_id == db.reference("/core_chat").get():
+        # conduct archiving
+        mc = db.reference("/MC").get()
+        mc_main, mc_archive = archive_and_split(mc)
+        db.reference("/MC").set(mc_main)
+        db.reference("/MC_Archive").set(mc_archive)
+        off = db.reference("/Off_Leave").get()
+        off_main, off_archive = archive_and_split(off)
+        db.reference("/Off_Leave").set(off_main)
+        db.reference("/Off_Leave_Archive").set(off_archive)
+        admin_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Export Excel", callback_data='Export Excel')],
+            [InlineKeyboardButton("Generate Parade State", callback_data='Generate Parade State')],
+            [InlineKeyboardButton("Award Off", callback_data='Award Off')]
+        ])
+        context.bot.send_message(chat_id=chat_id,
+                                 text="What would you like to do today?", reply_markup=admin_keyboard)
+    else:
+        context.bot.send_message(chat_id=chat_id, text="Only admins can use this command.")
+        return -1
+
+
+def admin_excel_choose(update, context):
+    context.bot.edit_message_reply_markup(chat_id=update.effective_chat.id,
+                                          message_id=update.effective_message.message_id)
+    choose_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("MC", callback_data='ExcelMC')],
+        [InlineKeyboardButton("MC Archive", callback_data='ExcelMC_Archive')],
+        [InlineKeyboardButton("Off/Leave", callback_data='ExcelOff_Leave')],
+        [InlineKeyboardButton("Off/Leave Archive", callback_data='ExcelOff_Leave_Archive')]
+    ])
+    context.bot.send_message(chat_id=update.effective_chat.id,
+                         text="Which would you like to export?", reply_markup=choose_keyboard)
+
+
+def admin_excel_export(update, context):
+    context.bot.edit_message_reply_markup(chat_id=update.effective_chat.id,
+                                          message_id=update.effective_message.message_id)
+    query_type = update.callback_query.data[5:]
+    query_dict = db.reference(f"/{query_type}").get()
+    name = f"{query_type} Query at {datetime.now().strftime('%d%m%y-%H%M%S')}.xlsx"
+    print(name)
+    dict_to_excel(query_dict, name)
+    file = open(name, 'rb')
+    context.bot.send_document(update.effective_chat.id, document=file)
+    file.close()
+
+
+def parade_state(update, context):
+    context.bot.edit_message_reply_markup(chat_id=update.effective_chat.id,
+                                          message_id=update.effective_message.message_id)
+    mc = who_is_not_around_today(db.reference(f"/MC").get())
+    off_leave = who_is_not_around_today(db.reference(f"/Off_Leave").get())
+    context.bot.send_message(chat_id=update.effective_chat.id, text=create_parade_state(mc, off_leave))
+
+
+def award_off_name(update, context):
+    context.bot.edit_message_reply_markup(chat_id=update.effective_chat.id,
+                                          message_id=update.effective_message.message_id)
+    context.bot.send_message(chat_id=update.effective_chat.id, text="Who would you like to award off to?")
+    return AWARD_OFF_NUMBER
+
+
+def award_off_number(update, context):
+    name = update.message.text
+    if name not in db.reference("/off_balance").get():
+        context.bot.send_message(chat_id=update.effective_chat.id, text="Invalid name. Please try again")
+        return None
+    else:
+        context.chat_data["Award Off"] = name
+        context.bot.send_message(chat_id=update.effective_chat.id, text="How many off?")
+        return AWARD_OFF_UPDATE
+
+
+def award_off_update(update, context):
+    number = update.message.text
+    name = context.chat_data.pop("Award Off")
+    ref = db.reference(f"/off_balance/{name}")
+    old_off = ref.get()
+    ref.set(old_off + int(number))
+    context.bot.send_message(chat_id=update.effective_chat.id, text=f"{number} Off awarded to {name}. Their new balance is {old_off + int(number)} Off.")
+    return ConversationHandler.END
 
 
 def cancel(update, context):
-    # TODO: this doesn't really work quite right yet.
     context.bot.send_message(chat_id=update.effective_chat.id, text="Operation Cancelled. Type /start to try again.",
                              reply_markup=telegram.ReplyKeyboardRemove())
     return ConversationHandler.END
@@ -268,14 +339,13 @@ def mc_success(update, context):
                                           message_id=update.effective_message.message_id)
     start_date = context.user_data.pop("MCStart", "No Start Found")
     end_date = context.user_data.pop("MCEnd", "No End Found")
-    urti = update.callback_query.data == "MCURTIYes"
-    urti_message = "URTI" if urti else "Non-URTI"
+    urti = "URTI" if update.callback_query.data == "MCURTIYes" else "Non-URTI"
     user_chats = db.reference("/user_chats").get()
     rank_name = user_chats[str(update.effective_chat.id)]
     rank = rank_name[:3]
     name = rank_name[4:]
     context.bot.send_message(chat_id=db.reference("/core_chat").get(),
-                             text=f"{rank_name} has submitted an MC({urti_message}) lasting from {start_date} to {end_date}.")
+                             text=f"{rank_name} has submitted an MC({urti}) lasting from {start_date} to {end_date}.")
     # submit MC entry to database
     mc_ref = db.reference("/MC")
     mc_entry = {
@@ -283,7 +353,7 @@ def mc_success(update, context):
         "Name": name,
         "Start Date": start_date,
         "End Date": end_date,
-        "URTI?": urti
+        "Type": urti
     }
     mc_ref.push().set(mc_entry)
     context.bot.send_message(chat_id=update.effective_chat.id, text="MC Successfully Submitted!")
@@ -437,14 +507,27 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel), MessageHandler(Filters.update, dont_recognize)]
     )
+    award_off_conversation = ConversationHandler(
+        entry_points=[CallbackQueryHandler(award_off_name, pattern="Award Off")],
+        states={
+            AWARD_OFF_NUMBER: [MessageHandler(Filters.regex("^[1-3A-Z]{3}"), award_off_number)],
+            AWARD_OFF_UPDATE: [MessageHandler(Filters.regex("^[0-9]+"), award_off_update)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel), MessageHandler(Filters.update, dont_recognize)]
+    )
     dispatcher.add_handler(CallbackQueryHandler(rs_approved, pattern="Approved.*"))
     dispatcher.add_handler(location_tracking_conversation)
     dispatcher.add_handler(submit_mc_conversation)
     dispatcher.add_handler(rs_location_conversation)
     dispatcher.add_handler(register_conversation)
     dispatcher.add_handler(apply_off_conversation)
+    dispatcher.add_handler(award_off_conversation)
     # this must be at the bottom due to handler priority
     dispatcher.add_handler(CommandHandler("cancel", cancel))
+    dispatcher.add_handler(CommandHandler("admin", admin))
+    dispatcher.add_handler(CallbackQueryHandler(admin_excel_choose, pattern="Export Excel"))
+    dispatcher.add_handler(CallbackQueryHandler(admin_excel_export, pattern="Excel*"))
+    dispatcher.add_handler(CallbackQueryHandler(parade_state, pattern="Generate Parade State"))
     # have to force stop the program to stop polling
     updater.start_polling()
     updater.idle()
