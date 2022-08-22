@@ -64,9 +64,9 @@ def create_parade_state(mc_dict, off_dict):
     return ret
 
 # what if empty?
-test_dict = excel_to_dict("test.xlsx")
-test_dict1 = excel_to_dict("test1.xlsx")
-df1 = who_is_not_around_today(test_dict)
-df2 = who_is_not_around_today(test_dict1)
-
-print(create_parade_state(test_dict, test_dict1))
+# test_dict = excel_to_dict("test.xlsx")
+# test_dict1 = excel_to_dict("test1.xlsx")
+# df1 = who_is_not_around_today(test_dict)
+# df2 = who_is_not_around_today(test_dict1)
+#
+# print(create_parade_state(test_dict, test_dict1))
