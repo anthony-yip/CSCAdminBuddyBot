@@ -9,8 +9,8 @@ from telegram.ext import Updater
 import logging
 from telegram.ext import CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, Filters
 import firebase_admin
-from Models.private_info import credentials_path, database_url, telegram_token
-from Models.logic import *
+from Models.private_info import *
+from Models.base import *
 
 
 def main():
@@ -21,7 +21,9 @@ def main():
     # firebase stuff
     cred_obj = firebase_admin.credentials.Certificate(credentials_path)
     firebase_admin.initialize_app(cred_obj, {
-        'databaseURL': database_url
+        'databaseURL': database_url,
+        'storageBucket': storage_bucket_url
+
     })
 
     # create updater and all all relevant dispatchers

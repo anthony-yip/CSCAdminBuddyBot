@@ -1,5 +1,6 @@
 # so ConversationHandler doesn't throw errors
-MC_END_DATE, MC_URTI, MC_SUCCESS = range(3)
+# MC_END_DATE, MC_URTI, MC_SUCCESS = range(3)
+MC_END_DATE, MC_URTI, MC_UPLOAD, MC_SUCCESS = range(4)
 OFF_END_DATE, OFF_TYPE, OFF_SUCCESS = range(3)
 RSLOCATION, RSTYPE = range(2)
 REGISTERNAME, REGISTERFINISH = range(2)
